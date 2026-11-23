@@ -4,13 +4,13 @@ import subprocess
 
 import pytest
 
-from codegraph.cli import main
+from teia.cli import main
 
 TS_FILES = {
     "tsconfig.json": '{\n  // solution config extends a base\n  "extends": "./tsconfig.base.json",\n'
                      '  "compilerOptions": { "strict": true, },\n}\n',
     "tsconfig.base.json": '{ "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["src/*"] } } }',
-    "codegraph.toml": 'registry = ["src/registry.ts"]\n',
+    "teia.toml": 'registry = ["src/registry.ts"]\n',
     "src/lib/date.ts": "export function isoDate(d: Date) {\n  return d.toISOString();\n}\n"
                        "export function unusedThing() {}\n",
     "src/lib/index.ts": "export * from './date';\n",
@@ -73,7 +73,7 @@ def runner(repo, capsys):
 
 
 def query(repo, sql, *params):
-    con = sqlite3.connect(repo / ".codegraph" / "graph.db")
+    con = sqlite3.connect(repo / ".teia" / "graph.db")
     con.row_factory = sqlite3.Row
     return [dict(r) for r in con.execute(sql, params)]
 

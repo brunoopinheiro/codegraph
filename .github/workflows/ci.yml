@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash  # Git Bash on Windows, so globs and grep behave the same on both
+    steps:
+      - uses: actions/checkout@v4
+
+      # Python comes from .python-version (uv installs it); dev dependencies from uv.lock.
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Git is available
+        run: git --version
+
+      # The tests create throwaway repos with `git init` and set their own commit identity,
+      # so they must pass without a global git user.name / user.email (runners have none).
+      - name: Test
+        run: uv run --locked pytest
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Check the viewer assets are packaged
+        run: |
+          uv run --locked python -m zipfile -l dist/*.whl > wheel-contents.txt
+          cat wheel-contents.txt
+          for f in teia/export.py teia/view/__init__.py teia/view/template.html \
+                   teia/view/app.js teia/view/app.css teia/view/vendor/README.md; do
+            grep -q "$f" wheel-contents.txt || { echo "::error::$f is missing from the wheel"; exit 1; }
+          done
+          tar -tzf dist/*.tar.gz > sdist-contents.txt
+          for f in src/teia/view/template.html src/teia/view/app.js; do
+            grep -q "$f" sdist-contents.txt || { echo "::error::$f is missing from the sdist"; exit 1; }
+          done
+
+      - name: Smoke-test the built wheel
+        run: |
+          wheel="$(ls dist/*.whl)"
+          uvx --from "$wheel" teia --root . index
+          uvx --from "$wheel" teia --root . view --no-open --out .teia/smoke-view.html
+          grep -q 'id="teia-data"' .teia/smoke-view.html

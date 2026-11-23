@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import db
 from .config import glob_match, load_config, matches_any
+from .export import EDGE_KINDS, FORMATS, RUNTIME_KINDS, build_export, group_dir, render_export
 from .languages import ADAPTERS, adapter_for
 from .link import link
 from .parse import parse_files
@@ -59,7 +60,7 @@ def run_index(root: Path, db_path: Path, full: bool = False) -> dict:
     t0 = time.perf_counter()
     cfg = load_config(root)
     for warning in cfg.warnings:
-        print(f"codegraph: warning: {warning}", file=sys.stderr)
+        print(f"teia: warning: {warning}", file=sys.stderr)
     con = db.connect(db_path)
     if full or db.get_meta(con, "config") != cfg.digest + db.SCHEMA_VERSION:
         db.reset(con)
@@ -130,14 +131,14 @@ class Graph:
             return {fid}, []
         syms = self.find_symbols(target)
         if not syms:
-            raise SystemExit(f"codegraph: no file or symbol named {target!r}")
+            raise SystemExit(f"teia: no file or symbol named {target!r}")
         return {s["file_id"] for s in syms}, syms
 
 
 def cmd_refs(g: Graph, args) -> dict:
     syms = g.find_symbols(args.symbol)
     if not syms:
-        raise SystemExit(f"codegraph: no symbol named {args.symbol!r}")
+        raise SystemExit(f"teia: no symbol named {args.symbol!r}")
     ids = [s["id"] for s in syms]
     marks = ",".join("?" * len(ids))
     rows = g.con.execute(
@@ -164,7 +165,7 @@ def cmd_callers(g: Graph, args) -> dict:
 def cmd_callees(g: Graph, args) -> dict:
     syms = g.find_symbols(args.symbol)
     if not syms:
-        raise SystemExit(f"codegraph: no symbol named {args.symbol!r}")
+        raise SystemExit(f"teia: no symbol named {args.symbol!r}")
     ids = [s["id"] for s in syms]
     rows = g.con.execute(
         f"SELECT t.name, t.kind, t.file_id, COUNT(*) AS n FROM refs r JOIN symbols t ON t.id=r.target_symbol_id "
@@ -440,13 +441,51 @@ UNUSED_CLASSES = ("dead", "local-only", "test-only")
 def parse_csv(value: str | None, allowed: tuple[str, ...] | None, flag: str) -> set[str]:
     items = {v.strip() for v in (value or "").split(",") if v.strip()}
     if allowed is not None and items - set(allowed):
-        raise SystemExit(f"codegraph: {flag} takes {', '.join(allowed)} (comma separated), got {value!r}")
+        raise SystemExit(f"teia: {flag} takes {', '.join(allowed)} (comma separated), got {value!r}")
     return items
 
 
-def group_dir(path: str, depth: int) -> str:
-    """The first `depth` directory components of a file's path ('.' for files at the root)."""
-    return "/".join(path.split("/")[:-1][:depth]) or "."
+def export_data(g: Graph, args, collapse: bool) -> dict:
+    kinds = parse_csv(args.kinds, EDGE_KINDS, "--kinds")
+    if not kinds:
+        raise SystemExit("teia: --kinds needs at least one edge kind")
+    return build_export(g, load_config(Path(args.root)), kinds, getattr(args, "path", None) or [],
+                        args.group_depth, collapse)
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def cmd_export(g: Graph, args) -> None:
+    """Prints (or writes to --out) the graph in --format; not a JSON-or-text command like the others."""
+    data = export_data(g, args, args.collapse)
+    text = render_export(data, args.format)
+    if args.out:
+        write_text(Path(args.out), text)
+        print(f"teia: wrote {data['counts']['nodes']} node(s) and {data['counts']['edges']} edge(s) "
+              f"to {args.out}", file=sys.stderr)
+    else:
+        sys.stdout.write(text if text.endswith("\n") else text + "\n")
+
+
+def cmd_view(g: Graph, args) -> dict:
+    from . import view  # the HTML assets are only read for this command
+
+    files, groups = export_data(g, args, False), export_data(g, args, True)
+    out = Path(args.out) if args.out else Path(args.root) / ".teia" / "view.html"
+    page, mode = view.render_html({"title": Path(args.root).name, "files": files, "groups": groups})
+    write_text(out, page)
+    if mode == "inline":
+        print("teia: view: libraries inlined from the package's vendor/ files (works offline)", file=sys.stderr)
+    else:
+        print("teia: view: vendor files not found, the page loads its libraries from the CDN "
+              "(needs a network connection to render)", file=sys.stderr)
+    opened = False if args.no_open else view.open_in_browser(out)
+    return {"out": str(out), "libraries": mode, "files": files["counts"]["nodes"],
+            "groups": groups["counts"]["nodes"], "edges": files["counts"]["edges"], "opened": opened}
 
 
 def cmd_stats(g: Graph, args) -> dict:
@@ -470,7 +509,7 @@ def cmd_stats(g: Graph, args) -> dict:
 def config_in_effect(g: Graph, root: Path) -> dict:
     """How many indexed files each pattern of registry / entrypoints / tests matches (0 = probably a typo)."""
     cfg = load_config(root)
-    out: dict = {"file": "codegraph.toml" if cfg.present else None, "warnings": list(cfg.warnings)}
+    out: dict = {"file": "teia.toml" if cfg.present else None, "warnings": list(cfg.warnings)}
     paths = list(g.paths.values())
     for key in ("registry", "entrypoints", "tests"):
         patterns = getattr(cfg, key)
@@ -542,6 +581,10 @@ def render(cmd: str, data: dict) -> str:
             lines += [f"  {n:>5}  {d}" for d, n in s["by_directory"].items()]
         lines.append(f"{data['total']} unused export(s)"
                      + (f", showing {data['shown']}" if data["shown"] < data["total"] and "summary" not in data else ""))
+    elif cmd == "view":
+        lines.append(f"wrote {data['out']}: {data['files']} file(s), {data['groups']} group(s), "
+                     f"{data['edges']} edge(s); libraries: {data['libraries']}"
+                     + ("" if data["opened"] else " (not opened)"))
     elif cmd == "stats":
         lines.append("  ".join(f"{k}={v}" for k, v in data["counts"].items()))
         lines.append("import kinds: " + "  ".join(f"{k}={v}" for k, v in data["import_kinds"].items()))
@@ -550,7 +593,7 @@ def render(cmd: str, data: dict) -> str:
         lines.append("top causes:")
         lines += [f"  {c['n']:>5}  {c['reason']}  {c['spec']}" for c in data["top_causes"]]
         cfg = data["config"]
-        lines.append(f"config ({cfg['file'] or 'no codegraph.toml, defaults in effect'}):")
+        lines.append(f"config ({cfg['file'] or 'no teia.toml, defaults in effect'}):")
         for key in ("registry", "entrypoints", "tests"):
             c = cfg[key]
             lines.append(f"  {key}: {c['files']} file(s) matched [{c['source']}]")
@@ -583,15 +626,26 @@ def common_options(defaults: bool) -> argparse.ArgumentParser:
         return value if defaults else argparse.SUPPRESS
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--root", default=default(None), help="repository root (default: git toplevel of cwd)")
-    common.add_argument("--db", default=default(None), help="database path (default: <root>/.codegraph/graph.db)")
+    common.add_argument("--db", default=default(None), help="database path (default: <root>/.teia/graph.db)")
     common.add_argument("--json", action="store_true", default=default(False), help="JSON output")
     common.add_argument("--include-tests", action="store_true", default=default(False),
                         help="include test files and mock edges")
     return common
 
 
+def graph_filters(p: argparse.ArgumentParser) -> None:
+    """Options shared by `export` and `view`."""
+    p.add_argument("--kinds", default=",".join(RUNTIME_KINDS), metavar="KINDS",
+                   help=f"edge kinds, comma separated (default: {','.join(RUNTIME_KINDS)}; "
+                        f"also: type, dynamic, mock)")
+    p.add_argument("--path", action="append", metavar="GLOB",
+                   help="only files matching this glob (repeatable) and the edges among them")
+    p.add_argument("--group-depth", type=int, default=3, metavar="N",
+                   help="leading directory levels that define a node's group (default: 3)")
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="codegraph", parents=[common_options(True)])
+    parser = argparse.ArgumentParser(prog="teia", parents=[common_options(True)])
     common = common_options(False)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("index", parents=[common]).add_argument("--full", action="store_true")
@@ -607,7 +661,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("path", parents=[common])
     p.add_argument("a"), p.add_argument("b")
     p = sub.add_parser("cycles", parents=[common])
-    p.add_argument("--kinds", default="static,reexport,star,registry",
+    p.add_argument("--kinds", default=",".join(RUNTIME_KINDS),
                    help="edge kinds to follow (add type,dynamic to widen)")
     p.add_argument("--members", action="store_true", help="text output: list every file of each cycle")
     p.add_argument("--edges", action="store_true",
@@ -624,18 +678,33 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--group-depth", type=int, default=3, metavar="N",
                    help="directory levels used by --summary (default: 3)")
     sub.add_parser("stats", parents=[common])
+    p = sub.add_parser("export", parents=[common], help="file-level import graph as json, gexf, mermaid or dot")
+    p.add_argument("--format", choices=FORMATS, default="json", help="output format (default: json)")
+    p.add_argument("--out", metavar="FILE", help="write to FILE instead of stdout")
+    p.add_argument("--collapse", action="store_true",
+                   help="one node per group (--group-depth), edges aggregated between groups, self-edges dropped")
+    graph_filters(p)
+    p = sub.add_parser("view", parents=[common], help="interactive HTML view of the file-level import graph")
+    p.add_argument("--out", metavar="FILE", help="HTML file to write (default: <root>/.teia/view.html)")
+    p.add_argument("--no-open", action="store_true", help="write the file without opening a browser")
+    graph_filters(p)
     args = parser.parse_args(argv)
     root = find_root(args.root)
     args.root = str(root)
-    db_path = Path(args.db) if args.db else root / ".codegraph" / "graph.db"
+    db_path = Path(args.db) if args.db else root / ".teia" / "graph.db"
     if args.cmd == "index":
         data = run_index(root, db_path, args.full)
     else:
         if not db_path.exists():
-            raise SystemExit("codegraph: no index found, run `codegraph index` first")
+            raise SystemExit("teia: no index found, run `teia index` first")
         handler = {"refs": cmd_refs, "callers": cmd_callers, "callees": cmd_callees, "impact": cmd_impact,
-                   "path": cmd_path, "cycles": cmd_cycles, "unused-exports": cmd_unused, "stats": cmd_stats}
-        data = handler[args.cmd](Graph(db.connect(db_path), args.include_tests), args)
+                   "path": cmd_path, "cycles": cmd_cycles, "unused-exports": cmd_unused, "stats": cmd_stats,
+                   "view": cmd_view}
+        graph = Graph(db.connect(db_path), args.include_tests)
+        if args.cmd == "export":
+            cmd_export(graph, args)
+            return 0
+        data = handler[args.cmd](graph, args)
     print(json.dumps(data, indent=2) if args.json else render(args.cmd, data))
     return 0
 

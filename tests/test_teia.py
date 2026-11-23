@@ -6,9 +6,9 @@ import pytest
 from conftest import TS_FILES, make_repo, runner
 from conftest import query as edges
 
-from codegraph.cli import main
-from codegraph.config import glob_match
-from codegraph.resolve import match_paths
+from teia.cli import main
+from teia.config import glob_match
+from teia.resolve import match_paths
 
 
 def test_alias_and_barrel_chain_reach_definition(cg, repo):
@@ -108,7 +108,7 @@ def test_helpers():
 
 # -- impact: registry boundary and depth ---------------------------------------------------
 REGISTRY_FILES = {
-    "codegraph.toml": 'registry = ["src/registry.ts"]\n',
+    "teia.toml": 'registry = ["src/registry.ts"]\n',
     "src/lib/util.ts": "export const util = 1;\n",
     "src/mod/a.ts": "import { util } from '../lib/util';\nexport const a = util;\n",
     "src/mod/b.ts": "import { a } from './a';\nexport const b = a;\n",
@@ -221,9 +221,9 @@ def test_unused_exports_text_shows_class(tmp_path, capsys):
     assert "5 unused export(s), showing 1" in out
 
 
-# -- codegraph.toml: validation and stats --------------------------------------------------
+# -- teia.toml: validation and stats --------------------------------------------------
 def test_index_warns_on_unknown_toml_keys(tmp_path, capsys):
-    repo = make_repo(tmp_path, {"codegraph.toml": 'registy = ["src/r.ts"]\nregistry = "src/r.ts"\n',
+    repo = make_repo(tmp_path, {"teia.toml": 'registy = ["src/r.ts"]\nregistry = "src/r.ts"\n',
                                 "src/r.ts": "export const r = 1;\n"})
     main(["index", "--root", str(repo), "--json"])
     err = capsys.readouterr().err
@@ -233,11 +233,11 @@ def test_index_warns_on_unknown_toml_keys(tmp_path, capsys):
 
 def test_stats_reports_config_in_effect(tmp_path, capsys):
     cg = runner(make_repo(tmp_path, {
-        "codegraph.toml": 'entrypoints = ["src/nope.ts", "src/main.ts"]\nregistry = ["src/reg.ts"]\n',
+        "teia.toml": 'entrypoints = ["src/nope.ts", "src/main.ts"]\nregistry = ["src/reg.ts"]\n',
         "src/main.ts": "export const m = 1;\n", "src/reg.ts": "export const r = () => import('./main');\n",
         "src/main.test.ts": "export const t = 1;\n"}), capsys)
     cfg = cg("stats")["config"]
-    assert cfg["file"] == "codegraph.toml" and cfg["warnings"] == []
+    assert cfg["file"] == "teia.toml" and cfg["warnings"] == []
     assert cfg["entrypoints"]["files"] == 1 and cfg["entrypoints"]["source"] == "toml"
     assert cfg["entrypoints"]["patterns"] == [{"pattern": "src/nope.ts", "files": 0},
                                               {"pattern": "src/main.ts", "files": 1}]
@@ -246,7 +246,7 @@ def test_stats_reports_config_in_effect(tmp_path, capsys):
 
 
 def test_stats_text_flags_patterns_matching_nothing(tmp_path, capsys):
-    repo = make_repo(tmp_path, {"codegraph.toml": 'entrypoints = ["src/nope.ts"]\n', "src/a.ts": "export const a = 1;\n"})
+    repo = make_repo(tmp_path, {"teia.toml": 'entrypoints = ["src/nope.ts"]\n', "src/a.ts": "export const a = 1;\n"})
     runner(repo, capsys)
     capsys.readouterr()
     main(["stats", "--root", str(repo)])
@@ -259,7 +259,7 @@ def test_stats_text_flags_patterns_matching_nothing(tmp_path, capsys):
 # -- cycles: edge kinds --------------------------------------------------------------------
 def test_cycle_edge_kinds_show_registry_dependency(tmp_path, capsys):
     repo = make_repo(tmp_path, {
-        "codegraph.toml": 'registry = ["src/registry.ts"]\n',
+        "teia.toml": 'registry = ["src/registry.ts"]\n',
         "src/page.ts": "import { r } from './registry';\nexport const p = r;\n",
         "src/registry.ts": "export const r = () => import('./page');\n"})
     cg = runner(repo, capsys)

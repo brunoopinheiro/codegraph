@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title><!--CG:TITLE--></title>
+<style><!--CG:STYLE--></style>
+</head>
+<body>
+<header class="bar">
+  <strong class="brand">teia</strong>
+  <span id="summary" class="muted"></span>
+  <div class="search">
+    <input id="search" type="search" placeholder="Find a file (substring)" autocomplete="off" spellcheck="false"
+           aria-label="Find a file">
+    <ul id="matches" class="matches" hidden></ul>
+  </div>
+  <label class="toggle"><input id="collapsed" type="checkbox"> Collapsed by group</label>
+  <button id="relayout" type="button">Re-run layout</button>
+</header>
+<main class="layout">
+  <aside class="side left">
+    <section>
+      <h2>Edge kinds</h2>
+      <div id="kinds" class="kinds"></div>
+    </section>
+    <section class="grow">
+      <h2>Groups <button id="groups-all" type="button" class="link">show all</button></h2>
+      <ul id="legend" class="legend"></ul>
+    </section>
+  </aside>
+  <div class="stage">
+    <div id="graph" class="graph"></div>
+    <div id="status" class="status" hidden></div>
+    <div id="message" class="message" hidden></div>
+  </div>
+  <aside id="panel" class="side right" hidden>
+    <button id="panel-close" type="button" class="link close">close</button>
+    <div id="panel-body"></div>
+  </aside>
+</main>
+<script id="teia-data" type="application/json"><!--CG:DATA--></script>
+<!--CG:LIBRARIES-->
+<script><!--CG:APP--></script>
+</body>
+</html>
