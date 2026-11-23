@@ -17,10 +17,13 @@ uvx --from <path-or-git-url-of-this-repo> codegraph --help
 
 Or install the wheel from a release:
 
+download `codegraph-<version>-py3-none-any.whl` from the release page and point pipx at it:
+
 ```sh
-gh release download v0.1.0 --repo <owner>/codegraph --pattern "*.whl"
-pipx install ./codegraph-0.1.0-py3-none-any.whl
+pipx install ~/Downloads/codegraph-0.1.0-py3-none-any.whl
 ```
+
+To upgrade, download the new wheel and run `pipx install --force <wheel>`.
 
 Requires Python 3.11+ and `git` on PATH (files are listed with `git ls-files`).
 
