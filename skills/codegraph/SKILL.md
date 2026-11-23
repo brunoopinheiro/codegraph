@@ -1,6 +1,6 @@
 ---
 name: codegraph
-description: Use when you need structural facts about a TypeScript/JavaScript or Python codebase - who references or calls a symbol, what a change to a file or symbol can break, how two files are connected, import cycles, unused exports - or when setting up codegraph in a repository. Prefer it over grep for "who uses X" and "what breaks if I change Y", because it resolves aliases, barrels and re-exports to the real definition.
+description: Use when you need structural facts about a TypeScript/JavaScript or Python codebase - who references or calls a symbol, what a change to a file or symbol can break, how two files are connected, import cycles, unused exports, the file-level import graph (export or an interactive view for the user) - or when setting up codegraph in a repository. Prefer it over grep for "who uses X" and "what breaks if I change Y", because it resolves aliases, barrels and re-exports to the real definition.
 ---
 
 # codegraph
@@ -110,11 +110,30 @@ Always pass `--json` when you will parse the output. Symbols are a bare name or
 | How does A reach B? | `codegraph path src/a.ts src/b.ts --json` |
 | Are there import cycles? | `codegraph cycles --json` (add `--kinds static,reexport,star,registry,type,dynamic` for type/lazy edges; `--members` lists every file in text output; `--edges` lists the edges) |
 | What exports are unused? | `codegraph unused-exports --summary` first, then `codegraph unused-exports --class dead --path 'src/x/**' --limit 50 --json` |
+| The file-level import graph as data | `codegraph export` (JSON to stdout; `--format gexf\|mermaid\|dot`, `--out FILE`) |
+| Show the user the import graph | `codegraph view` (writes `.codegraph/view.html` and opens it; `--no-open` to only write it) |
 
 - Run `codegraph index` first in every session and after you edit files. It is
   incremental and takes about a second when nothing changed. Its output says whether the
   index was `up_to_date` and which `commit` it was built at; `stats` has the same `index`
   block with `commit_matches_head`.
+
+### `export` and `view`
+
+Both cover the file-level import graph (files and resolved imports, not symbols), with
+the same filters: `--kinds` (default `static,reexport,star,registry`; add `type`,
+`dynamic`), `--path GLOB` (repeatable), `--group-depth N` (default 3) and the global
+`--include-tests`. `export --collapse` gives one node per directory group.
+
+- `view` is for humans: an interactive page to explore the graph. Offer it when the user
+  wants to see the architecture; don't use it to answer questions yourself. Keep using the
+  `--json` commands (`impact`, `path`, `cycles`, ...) for your own analysis.
+- `export --format json` is the raw graph if you need all edges at once; filter with
+  `--path` first on a large repo. `mermaid` and `dot` refuse more than 250 nodes: use
+  `--collapse` (with a small `--group-depth`) or `--path` to get a diagram that fits in a
+  document or PR description.
+- `view` prints on stderr whether its libraries are inlined (works offline) or loaded from
+  a CDN (the page needs network access). Tell the user if it is the CDN mode.
 
 ### Reading `impact`
 

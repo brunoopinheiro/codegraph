@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import db
 from .config import glob_match, load_config, matches_any
+from .export import EDGE_KINDS, FORMATS, RUNTIME_KINDS, build_export, group_dir, render_export
 from .languages import ADAPTERS, adapter_for
 from .link import link
 from .parse import parse_files
@@ -444,9 +445,47 @@ def parse_csv(value: str | None, allowed: tuple[str, ...] | None, flag: str) -> 
     return items
 
 
-def group_dir(path: str, depth: int) -> str:
-    """The first `depth` directory components of a file's path ('.' for files at the root)."""
-    return "/".join(path.split("/")[:-1][:depth]) or "."
+def export_data(g: Graph, args, collapse: bool) -> dict:
+    kinds = parse_csv(args.kinds, EDGE_KINDS, "--kinds")
+    if not kinds:
+        raise SystemExit("codegraph: --kinds needs at least one edge kind")
+    return build_export(g, load_config(Path(args.root)), kinds, getattr(args, "path", None) or [],
+                        args.group_depth, collapse)
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def cmd_export(g: Graph, args) -> None:
+    """Prints (or writes to --out) the graph in --format; not a JSON-or-text command like the others."""
+    data = export_data(g, args, args.collapse)
+    text = render_export(data, args.format)
+    if args.out:
+        write_text(Path(args.out), text)
+        print(f"codegraph: wrote {data['counts']['nodes']} node(s) and {data['counts']['edges']} edge(s) "
+              f"to {args.out}", file=sys.stderr)
+    else:
+        sys.stdout.write(text if text.endswith("\n") else text + "\n")
+
+
+def cmd_view(g: Graph, args) -> dict:
+    from . import view  # the HTML assets are only read for this command
+
+    files, groups = export_data(g, args, False), export_data(g, args, True)
+    out = Path(args.out) if args.out else Path(args.root) / ".codegraph" / "view.html"
+    page, mode = view.render_html({"title": Path(args.root).name, "files": files, "groups": groups})
+    write_text(out, page)
+    if mode == "inline":
+        print("codegraph: view: libraries inlined from the package's vendor/ files (works offline)", file=sys.stderr)
+    else:
+        print("codegraph: view: vendor files not found, the page loads its libraries from the CDN "
+              "(needs a network connection to render)", file=sys.stderr)
+    opened = False if args.no_open else view.open_in_browser(out)
+    return {"out": str(out), "libraries": mode, "files": files["counts"]["nodes"],
+            "groups": groups["counts"]["nodes"], "edges": files["counts"]["edges"], "opened": opened}
 
 
 def cmd_stats(g: Graph, args) -> dict:
@@ -542,6 +581,10 @@ def render(cmd: str, data: dict) -> str:
             lines += [f"  {n:>5}  {d}" for d, n in s["by_directory"].items()]
         lines.append(f"{data['total']} unused export(s)"
                      + (f", showing {data['shown']}" if data["shown"] < data["total"] and "summary" not in data else ""))
+    elif cmd == "view":
+        lines.append(f"wrote {data['out']}: {data['files']} file(s), {data['groups']} group(s), "
+                     f"{data['edges']} edge(s); libraries: {data['libraries']}"
+                     + ("" if data["opened"] else " (not opened)"))
     elif cmd == "stats":
         lines.append("  ".join(f"{k}={v}" for k, v in data["counts"].items()))
         lines.append("import kinds: " + "  ".join(f"{k}={v}" for k, v in data["import_kinds"].items()))
@@ -590,6 +633,17 @@ def common_options(defaults: bool) -> argparse.ArgumentParser:
     return common
 
 
+def graph_filters(p: argparse.ArgumentParser) -> None:
+    """Options shared by `export` and `view`."""
+    p.add_argument("--kinds", default=",".join(RUNTIME_KINDS), metavar="KINDS",
+                   help=f"edge kinds, comma separated (default: {','.join(RUNTIME_KINDS)}; "
+                        f"also: type, dynamic, mock)")
+    p.add_argument("--path", action="append", metavar="GLOB",
+                   help="only files matching this glob (repeatable) and the edges among them")
+    p.add_argument("--group-depth", type=int, default=3, metavar="N",
+                   help="leading directory levels that define a node's group (default: 3)")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="codegraph", parents=[common_options(True)])
     common = common_options(False)
@@ -607,7 +661,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("path", parents=[common])
     p.add_argument("a"), p.add_argument("b")
     p = sub.add_parser("cycles", parents=[common])
-    p.add_argument("--kinds", default="static,reexport,star,registry",
+    p.add_argument("--kinds", default=",".join(RUNTIME_KINDS),
                    help="edge kinds to follow (add type,dynamic to widen)")
     p.add_argument("--members", action="store_true", help="text output: list every file of each cycle")
     p.add_argument("--edges", action="store_true",
@@ -624,6 +678,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--group-depth", type=int, default=3, metavar="N",
                    help="directory levels used by --summary (default: 3)")
     sub.add_parser("stats", parents=[common])
+    p = sub.add_parser("export", parents=[common], help="file-level import graph as json, gexf, mermaid or dot")
+    p.add_argument("--format", choices=FORMATS, default="json", help="output format (default: json)")
+    p.add_argument("--out", metavar="FILE", help="write to FILE instead of stdout")
+    p.add_argument("--collapse", action="store_true",
+                   help="one node per group (--group-depth), edges aggregated between groups, self-edges dropped")
+    graph_filters(p)
+    p = sub.add_parser("view", parents=[common], help="interactive HTML view of the file-level import graph")
+    p.add_argument("--out", metavar="FILE", help="HTML file to write (default: <root>/.codegraph/view.html)")
+    p.add_argument("--no-open", action="store_true", help="write the file without opening a browser")
+    graph_filters(p)
     args = parser.parse_args(argv)
     root = find_root(args.root)
     args.root = str(root)
@@ -634,8 +698,13 @@ def main(argv: list[str] | None = None) -> int:
         if not db_path.exists():
             raise SystemExit("codegraph: no index found, run `codegraph index` first")
         handler = {"refs": cmd_refs, "callers": cmd_callers, "callees": cmd_callees, "impact": cmd_impact,
-                   "path": cmd_path, "cycles": cmd_cycles, "unused-exports": cmd_unused, "stats": cmd_stats}
-        data = handler[args.cmd](Graph(db.connect(db_path), args.include_tests), args)
+                   "path": cmd_path, "cycles": cmd_cycles, "unused-exports": cmd_unused, "stats": cmd_stats,
+                   "view": cmd_view}
+        graph = Graph(db.connect(db_path), args.include_tests)
+        if args.cmd == "export":
+            cmd_export(graph, args)
+            return 0
+        data = handler[args.cmd](graph, args)
     print(json.dumps(data, indent=2) if args.json else render(args.cmd, data))
     return 0
 

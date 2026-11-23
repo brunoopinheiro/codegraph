@@ -63,6 +63,8 @@ subcommand.
 | `cycles [--kinds k1,k2] [--members] [--edges]` | Import cycles (strongly connected components), a shortest example loop and the edge kinds holding each one together. |
 | `unused-exports [--path GLOB] [--kind K] [--class C] [--limit N] [--summary]` | Exported symbols that nothing outside their file (or outside tests) uses, classified `dead`, `local-only` or `test-only`. |
 | `stats` | Counts, edge status, the top 10 causes of `unresolved` / `ambiguous` edges, the `codegraph.toml` in effect (files matched by each `registry` / `entrypoints` / `tests` pattern) and the age/commit of the index. |
+| `export [--format json\|gexf\|mermaid\|dot] [--out FILE] [--kinds K] [--path GLOB] [--group-depth N] [--collapse]` | The file-level import graph (files and resolved imports) for other tools: JSON, GEXF for Gephi, Mermaid or Graphviz DOT. |
+| `view [--out FILE] [--no-open] [--kinds K] [--path GLOB] [--group-depth N]` | Writes one self-contained HTML page with an interactive view of the file-level import graph and opens it in the browser. |
 
 A symbol is a bare name (`isoDate`) or `path:name` (`src/lib/format.ts:isoDate`)
 when the name is defined in more than one file. Paths are relative to the repo root.
@@ -122,6 +124,44 @@ Filters: `--path GLOB` (repeatable, matched against the repo-relative path, e.g.
 levels, default 3) without listing entries. `--json` always has `total` (after filters,
 before `--limit`), `shown` and `unused` entries `{"path", "name", "kind", "line", "class"}`;
 with `--summary` it adds `summary` and `unused` is empty.
+
+### `export` and `view`
+
+Both work on the **file-level** import graph, not on symbols: nodes are indexed files,
+edges are resolved file-to-file imports and re-exports, aggregated per (from, to, kind)
+with a `count` of import statements. `view` is for humans; the `--json` commands above
+remain the interface for scripts and LLM agents.
+
+Shared options:
+- `--kinds a,b` edge kinds to include (default `static,reexport,star,registry`, the same
+  runtime kinds `cycles` follows; add `type`, `dynamic`, or `mock` with `--include-tests`).
+- `--path GLOB` (repeatable) keeps only matching files and the edges among them.
+- `--group-depth N` (default 3) the leading directory levels that form a node's `group`
+  (`src/modules/guest/x.ts` is in `src/modules/guest`; root files are in `.`).
+- Test files are left out unless `--include-tests` is given.
+
+`export --format` (default `json`) prints to stdout or writes `--out FILE`:
+- `json`: `nodes` (`id`, `path`, `group`, `lang`, `is_test`, `is_registry`,
+  `is_entrypoint`, `in_degree`, `out_degree`; degrees count distinct neighbours),
+  `edges` (`from`, `to`, `kind`, `count`), `counts`, and the options used.
+- `gexf`: GEXF 1.2 for Gephi, with node attributes (group, flags, degrees) and edge
+  `kind` and `weight`. Edges of several kinds between the same two files become one edge
+  (Gephi would merge them anyway): `kind` lists the kinds, `weight` sums the counts.
+- `mermaid` / `dot`: diagram text. These are unreadable for large graphs, so they refuse
+  more than 250 nodes; narrow with `--collapse` (and a smaller `--group-depth`) or `--path`.
+- `--collapse` makes one node per group (with a `files` count) and aggregates the edges
+  between groups; edges inside a group are dropped.
+
+`view` writes `<root>/.codegraph/view.html` (or `--out FILE`) and opens it unless
+`--no-open`. The page is a single file that works from `file://`: the graph data is
+embedded, rendering uses sigma.js, graphology and ForceAtlas2. Nodes are coloured by
+group (click a legend entry to hide or show a group) and sized by in-degree. You can search
+a file by substring, toggle edge kinds, click a node to highlight it and its direct
+neighbours and see its imports and importers, and switch between one node per group and
+all files (the page starts collapsed above 400 files). The libraries are inlined when
+their files are in the package's `codegraph/view/vendor/` (works offline; see the README
+there for the pinned versions and URLs); otherwise the page loads them from jsDelivr and
+needs a network connection. `view` says on stderr which mode it used.
 
 ## Configuration: `codegraph.toml` (optional, repo root)
 
@@ -243,7 +283,9 @@ uv run codegraph --root path/to/repo index
 
 Layout: `scan.py` (files and hashes), `parse.py` (parallel parsing), `languages/`
 (adapters), `resolve.py` (TS module resolution), `link.py` (re-exports and refs),
-`db.py` (SQLite), `cli.py` (commands), `config.py` (`codegraph.toml`).
+`db.py` (SQLite), `cli.py` (commands), `config.py` (`codegraph.toml`), `export.py`
+(file-level graph and its formats), `view/` (HTML viewer: `template.html`, `app.js`,
+`app.css` and optional `vendor/` libraries, read with `importlib.resources`).
 
 ### Adding a language
 
