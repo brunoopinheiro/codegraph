@@ -50,8 +50,33 @@ cause is understood and listed for the user.
    - CLI modules named in `pyproject.toml` `[project.scripts]`;
    - Django/Flask apps loaded by settings.
 5. If tests don't follow the default globs, set `tests`. The defaults are `*.test.*`, `*.spec.*`, `__tests__/`, `__mocks__/`, `test/`, `tests/`, `e2e/`, `test_*.py`, `*_test.py` and `conftest.py`.
-6. Show the user the final `codegraph.toml` and the `stats` result. Suggest committing
+6. Check the `config` block of `stats` (or the text output): it shows how many files each
+   `registry`, `entrypoints` and `tests` pattern matched. A pattern with 0 matches is a
+   typo or a wrong path; fix it. `codegraph index` also warns on stderr about unknown
+   keys in the toml, so read its stderr.
+7. Show the user the final `codegraph.toml` and the `stats` result. Suggest committing
    the toml; it is the repo's shared configuration. Do not commit `.codegraph/`.
+
+### `codegraph.toml` reference
+
+Every supported key. Paths are relative to the repo root with `/`. "globs" means glob
+patterns (`*` and `?` stay inside a path segment, `**/` matches any number of
+directories); the other keys are plain values.
+
+```toml
+include = ["src/**"]                   # globs. Index only matching files. Default: every file git lists
+exclude = ["**/*.generated.ts"]        # globs. Skip matching files
+registry = ["src/modules/registry.ts"] # globs. Imports in these files get kind=registry
+entrypoints = ["src/main.tsx"]         # globs. Exports in these files are never reported as unused
+tests = ["**/*.test.*", "**/__tests__/**"]  # globs. REPLACES the default test globs
+source_roots = ["src"]                 # plain directories, no globs. Python import roots (default ".", "src", "lib")
+extensions = [".ts", ".tsx", ".js"]    # plain suffixes, no globs. TS resolution order (default covers all)
+
+[aliases]                              # tsconfig "paths" syntax: pattern = string or list of targets
+"~/*" = ["src/*"]
+```
+
+A misspelled key is ignored (with a warning from `index`), so verify with `stats`.
 
 ### Fixes by cause
 
@@ -81,13 +106,47 @@ Always pass `--json` when you will parse the output. Symbols are a bare name or
 | Where is X used? | `codegraph refs X --json` |
 | Who calls / renders X? | `codegraph callers X --json` |
 | What does X depend on? | `codegraph callees X --json` |
-| What can break if I change this file / symbol? | `codegraph impact src/foo.ts --json` / `codegraph impact X --json` |
+| What can break if I change this file / symbol? | `codegraph impact src/foo.ts --json` / `codegraph impact X --json` (`--depth N` to limit, `--through-registry` for the full traversal) |
 | How does A reach B? | `codegraph path src/a.ts src/b.ts --json` |
-| Are there import cycles? | `codegraph cycles --json` (add `--kinds static,reexport,star,registry,type,dynamic` for type/lazy edges) |
-| What exports are dead? | `codegraph unused-exports --json` |
+| Are there import cycles? | `codegraph cycles --json` (add `--kinds static,reexport,star,registry,type,dynamic` for type/lazy edges; `--members` lists every file in text output; `--edges` lists the edges) |
+| What exports are unused? | `codegraph unused-exports --summary` first, then `codegraph unused-exports --class dead --path 'src/x/**' --limit 50 --json` |
 
 - Run `codegraph index` first in every session and after you edit files. It is
-  incremental and takes about a second when nothing changed.
+  incremental and takes about a second when nothing changed. Its output says whether the
+  index was `up_to_date` and which `commit` it was built at; `stats` has the same `index`
+  block with `commit_matches_head`.
+
+### Reading `impact`
+
+- By default it stops at registry files: a registry file that imports something impacted
+  is listed (`via: "registry"`, also in `registry_stopped`) but what imports the registry
+  is not, because that would be the whole app. Use `--through-registry` only when you
+  really need the full closure. Say so to the user when `registry_stopped` is not empty:
+  "the registry file X wires this module; everything that loads X is not included".
+- Each file has `depth`, `via` (the edge kind it was reached by) and `from`. The text
+  output ends with counts per depth. Start with `--depth 1` or `2` on a widely used file.
+
+### Reading `unused-exports`
+
+Entries have a `class`:
+
+- `dead`: no reference at all. Candidates for deletion, after checking "What it does not see".
+- `local-only`: used only inside its own file. The `export` keyword is unnecessary; the code is not dead.
+- `test-only`: used only from tests, also through a barrel. Not dead code; do not
+  suggest deleting it without asking.
+
+`--include-tests` makes test usage count as real usage, so `test-only` entries drop out of
+the list. Other filters: `--kind function,component,type,interface,const,...`,
+`--path GLOB` (repeatable), `--class`, `--limit N`, `--summary` (counts per class, kind and
+directory, no entries). `--json` has `total` (before `--limit`) and `shown`. On a large
+repo always start with `--summary`, then narrow with filters.
+
+### Reading `cycles`
+
+Each cycle lists every member (`files`), one `example` loop, `edge_kinds` (edges inside the
+component per kind), `held_by` (kinds whose removal breaks the cycle) and `needs_registry`.
+A cycle with `needs_registry: true` exists only because of a lazy registry wiring, which
+is a different problem from a static import cycle.
 - Tests and mocks are hidden by default. Add `--include-tests` when the question is about
   test coverage of a symbol, or before changing a signature, because tests call it too.
 - Before a refactor, run `impact` on the symbol and on its file. Use the list as
