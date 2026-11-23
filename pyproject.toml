@@ -1,0 +1,23 @@
+[project]
+name = "codegraph"
+version = "0.1.0"
+description = "Index a repository into a SQLite symbol graph and answer structural questions."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "tree-sitter>=0.23",
+    "tree-sitter-typescript>=0.23",
+]
+
+[project.scripts]
+codegraph = "codegraph.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
