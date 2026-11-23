@@ -15,7 +15,20 @@ uv tool install <path-or-git-url-of-this-repo>   # puts `codegraph` on PATH
 uvx --from <path-or-git-url-of-this-repo> codegraph --help
 ```
 
+Or install the wheel from a release:
+
+```sh
+gh release download v0.1.0 --repo <owner>/codegraph --pattern "*.whl"
+pipx install ./codegraph-0.1.0-py3-none-any.whl
+```
+
 Requires Python 3.11+ and `git` on PATH (files are listed with `git ls-files`).
+
+### Releasing
+
+Bump `version` in `pyproject.toml`, commit, then push a matching tag (`v0.1.0` for
+version `0.1.0`). The `Release` workflow checks that the tag matches the version, runs the
+tests, builds the wheel and sdist with `uv build` and attaches them to a GitHub release.
 
 ## Quick start
 
