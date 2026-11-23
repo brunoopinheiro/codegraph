@@ -1,8 +1,8 @@
-/* codegraph view: file-level import graph rendered with sigma.js v3 + graphology. */
+/* teia view: file-level import graph rendered with sigma.js v3 + graphology. */
 (function () {
   "use strict";
 
-  var DATA = JSON.parse(document.getElementById("codegraph-data").textContent);
+  var DATA = JSON.parse(document.getElementById("teia-data").textContent);
   var FILES = DATA.files;
   var GROUPS = DATA.groups;
   var COLLAPSE_ABOVE = 400;
@@ -50,8 +50,8 @@
     if (typeof SigmaCtor !== "function") missing.push("sigma.js");
     showMessage("Could not load " + missing.join(" and ") + ".\n" +
       "This page loads its libraries from a CDN, which needs a network connection. " +
-      "To view it offline, put the vendored files in codegraph/view/vendor/ (see the README there) " +
-      "and run `codegraph view` again.");
+      "To view it offline, put the vendored files in teia/view/vendor/ (see the README there) " +
+      "and run `teia view` again.");
     return;
   }
   if (!FILES.nodes.length) {

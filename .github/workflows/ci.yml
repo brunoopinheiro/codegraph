@@ -47,18 +47,18 @@ jobs:
         run: |
           uv run --locked python -m zipfile -l dist/*.whl > wheel-contents.txt
           cat wheel-contents.txt
-          for f in codegraph/export.py codegraph/view/__init__.py codegraph/view/template.html \
-                   codegraph/view/app.js codegraph/view/app.css codegraph/view/vendor/README.md; do
+          for f in teia/export.py teia/view/__init__.py teia/view/template.html \
+                   teia/view/app.js teia/view/app.css teia/view/vendor/README.md; do
             grep -q "$f" wheel-contents.txt || { echo "::error::$f is missing from the wheel"; exit 1; }
           done
           tar -tzf dist/*.tar.gz > sdist-contents.txt
-          for f in src/codegraph/view/template.html src/codegraph/view/app.js; do
+          for f in src/teia/view/template.html src/teia/view/app.js; do
             grep -q "$f" sdist-contents.txt || { echo "::error::$f is missing from the sdist"; exit 1; }
           done
 
       - name: Smoke-test the built wheel
         run: |
           wheel="$(ls dist/*.whl)"
-          uvx --from "$wheel" codegraph --root . index
-          uvx --from "$wheel" codegraph --root . view --no-open --out .codegraph/smoke-view.html
-          grep -q 'id="codegraph-data"' .codegraph/smoke-view.html
+          uvx --from "$wheel" teia --root . index
+          uvx --from "$wheel" teia --root . view --no-open --out .teia/smoke-view.html
+          grep -q 'id="teia-data"' .teia/smoke-view.html

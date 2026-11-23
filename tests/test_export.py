@@ -7,11 +7,11 @@ from pathlib import Path
 import pytest
 from conftest import make_repo, runner
 
-from codegraph import export, view
-from codegraph.cli import main
+from teia import export, view
+from teia.cli import main
 
 EXPORT_FILES = {
-    "codegraph.toml": 'registry = ["src/registry.ts"]\nentrypoints = ["src/main.ts"]\n',
+    "teia.toml": 'registry = ["src/registry.ts"]\nentrypoints = ["src/main.ts"]\n',
     "src/core/util.ts": "export const util = 1;\nexport type T = number;\n",
     "src/core/math.ts": "import { util } from './util';\nimport type { T } from './util';\n"
                         "export const two: T = util + 1;\n",
@@ -160,7 +160,7 @@ def test_export_mermaid_and_dot(ex_repo, ex, capsys):
     assert mermaid.splitlines()[0] == "flowchart LR"
     assert '["src/core"]' in mermaid and "-->|static x2|" in mermaid and "-->|registry|" in mermaid
     dot = raw(ex_repo, capsys, "export", "--format", "dot", "--path", "src/core/**")
-    assert dot.startswith("digraph codegraph {") and dot.rstrip().endswith("}")
+    assert dot.startswith("digraph teia {") and dot.rstrip().endswith("}")
     assert '[label="src/core/util.ts"]' in dot and dot.count(" -> ") == 2
 
 
@@ -185,7 +185,7 @@ def test_diagram_refuses_large_graphs(ex_repo, ex, capsys, monkeypatch):
 
 # -- view ----------------------------------------------------------------------------------
 def embedded(page):
-    match = re.search(r'<script id="codegraph-data" type="application/json">(.*?)</script>', page, re.S)
+    match = re.search(r'<script id="teia-data" type="application/json">(.*?)</script>', page, re.S)
     assert match, "no embedded data"
     return match.group(1)
 
@@ -208,8 +208,8 @@ def test_view_writes_html_with_embedded_data(ex_repo, ex, capsys, tmp_path, monk
 def test_view_default_out_and_filters(ex_repo, ex, monkeypatch, tmp_path):
     monkeypatch.setattr(view, "VENDOR", tmp_path / "no-vendor")
     data = ex("view", "--no-open", "--path", "src/core/**", "--kinds", "static")
-    assert Path(data["out"]).resolve() == (ex_repo / ".codegraph" / "view.html").resolve()
-    payload = json.loads(embedded((ex_repo / ".codegraph" / "view.html").read_text(encoding="utf-8")))
+    assert Path(data["out"]).resolve() == (ex_repo / ".teia" / "view.html").resolve()
+    payload = json.loads(embedded((ex_repo / ".teia" / "view.html").read_text(encoding="utf-8")))
     assert payload["files"]["kinds"] == ["static"] and payload["files"]["counts"]["nodes"] == 3
 
 
@@ -253,7 +253,7 @@ def test_view_embedding_is_script_safe(tmp_path):
     raw_json = embedded(page)
     assert "<" not in raw_json and ">" not in raw_json
     assert json.loads(raw_json) == data
-    assert "<title>codegraph: t&lt;/title&gt;</title>" in page
+    assert "<title>teia: t&lt;/title&gt;</title>" in page
 
 
 def test_view_assets_ship_with_the_package():

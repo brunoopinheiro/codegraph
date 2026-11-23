@@ -1,4 +1,4 @@
-"""Self-contained HTML viewer for the file-level import graph (`codegraph view`).
+"""Self-contained HTML viewer for the file-level import graph (`teia view`).
 
 The page is one HTML file: the export JSON sits in a `<script type="application/json">`
 tag, `app.js` and `app.css` are inlined, and the rendering libraries (sigma.js, graphology,
@@ -56,7 +56,7 @@ def render_html(data: dict, vendor=None) -> tuple[str, str]:
     template = (ASSETS / "template.html").read_text(encoding="utf-8")
     libraries, mode = library_tags(vendor)
     parts = {
-        "TITLE": html.escape(f"codegraph: {data.get('title') or 'import graph'}"),
+        "TITLE": html.escape(f"teia: {data.get('title') or 'import graph'}"),
         "STYLE": (ASSETS / "app.css").read_text(encoding="utf-8").replace("</style", "<\\/style"),
         "LIBRARIES": libraries,
         "DATA": embed_json(data),

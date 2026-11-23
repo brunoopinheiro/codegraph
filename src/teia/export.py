@@ -1,4 +1,4 @@
-"""File-level import graph export (`codegraph export`): JSON, GEXF, Mermaid and DOT."""
+"""File-level import graph export (`teia export`): JSON, GEXF, Mermaid and DOT."""
 from __future__ import annotations
 
 import json
@@ -86,7 +86,7 @@ def render_export(data: dict, fmt: str) -> str:
 def check_diagram_size(data: dict, fmt: str) -> None:
     n, limit = len(data["nodes"]), MAX_DIAGRAM_NODES
     if n > limit:
-        raise SystemExit(f"codegraph: {n} nodes is too many for {fmt} output (limit {limit}); "
+        raise SystemExit(f"teia: {n} nodes is too many for {fmt} output (limit {limit}); "
                          f"narrow it with --collapse (and a smaller --group-depth) or --path GLOB, "
                          f"or use --format json / gexf")
 
@@ -106,7 +106,7 @@ def to_gexf(data: dict) -> str:
     (Gephi merges them anyway): `kind` lists the kinds, `weight` sums the import counts."""
     root = ET.Element("gexf", {"xmlns": GEXF_NS, "version": "1.2"})
     meta = ET.SubElement(root, "meta")
-    ET.SubElement(meta, "creator").text = "codegraph"
+    ET.SubElement(meta, "creator").text = "teia"
     ET.SubElement(meta, "description").text = (
         f"File-level import graph ({'groups' if data['collapsed'] else 'files'}; kinds: {', '.join(data['kinds'])})")
     graph = ET.SubElement(root, "graph", {"defaultedgetype": "directed", "mode": "static"})
@@ -166,7 +166,7 @@ def _dot_string(text: str) -> str:
 
 def to_dot(data: dict) -> str:
     ids = {n["id"]: f"n{i}" for i, n in enumerate(data["nodes"])}
-    lines = ["digraph codegraph {", "  rankdir=LR;", "  node [shape=box];"]
+    lines = ["digraph teia {", "  rankdir=LR;", "  node [shape=box];"]
     lines += [f"  {ids[n['id']]} [label={_dot_string(n['id'])}];" for n in data["nodes"]]
     lines += [f"  {ids[e['from']]} -> {ids[e['to']]} [label={_dot_string(_edge_label(e))}, weight={e['count']}];"
               for e in data["edges"]]

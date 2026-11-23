@@ -1,5 +1,5 @@
 [project]
-name = "codegraph"
+name = "teia"
 version = "0.1.0"
 description = "Index a repository into a SQLite symbol graph and answer structural questions."
 readme = "README.md"
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-codegraph = "codegraph.cli:main"
+teia = "teia.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]

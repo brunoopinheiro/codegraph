@@ -1,6 +1,8 @@
-# codegraph
+# teia
 
-`codegraph` indexes a repository into a SQLite symbol graph and answers structural
+**T**racing **E**xports, **I**mports and **A**liases. *Teia* is Portuguese for web.
+
+`teia` indexes a repository into a SQLite symbol graph and answers structural
 questions about it: who references a symbol, what a change can break, how two files
 are connected, where the import cycles are and which exports nobody uses.
 
@@ -10,17 +12,17 @@ JavaScript and Python, and is built to take more languages without changing the 
 ## Install
 
 ```sh
-uv tool install <path-or-git-url-of-this-repo>   # puts `codegraph` on PATH
+uv tool install <path-or-git-url-of-this-repo>   # puts `teia` on PATH
 # or, without installing:
-uvx --from <path-or-git-url-of-this-repo> codegraph --help
+uvx --from <path-or-git-url-of-this-repo> teia --help
 ```
 
 Or install the wheel from a release:
 
-download `codegraph-<version>-py3-none-any.whl` from the release page and point pipx at it:
+download `teia-<version>-py3-none-any.whl` from the release page and point pipx at it:
 
 ```sh
-pipx install ~/Downloads/codegraph-0.1.0-py3-none-any.whl
+pipx install ~/Downloads/teia-0.1.0-py3-none-any.whl
 ```
 
 To upgrade, download the new wheel and run `pipx install --force <wheel>`.
@@ -37,13 +39,13 @@ tests, builds the wheel and sdist with `uv build` and attaches them to a GitHub 
 
 ```sh
 cd path/to/repo
-codegraph index          # first run parses everything; later runs only what changed
-codegraph stats          # check resolution health before trusting answers
-codegraph refs isoDate
-codegraph impact src/lib/date.ts
+teia index          # first run parses everything; later runs only what changed
+teia stats          # check resolution health before trusting answers
+teia refs isoDate
+teia impact src/lib/date.ts
 ```
 
-The database is `<repo>/.codegraph/graph.db`. The folder carries its own `.gitignore`,
+The database is `<repo>/.teia/graph.db`. The folder carries its own `.gitignore`,
 so nothing needs to be added to the repo's ignore rules.
 
 ## Commands
@@ -62,7 +64,7 @@ subcommand.
 | `path <a> <b>` | Shortest import path from `a` to `b` (files or symbols), with edge kinds and lines. |
 | `cycles [--kinds k1,k2] [--members] [--edges]` | Import cycles (strongly connected components), a shortest example loop and the edge kinds holding each one together. |
 | `unused-exports [--path GLOB] [--kind K] [--class C] [--limit N] [--summary]` | Exported symbols that nothing outside their file (or outside tests) uses, classified `dead`, `local-only` or `test-only`. |
-| `stats` | Counts, edge status, the top 10 causes of `unresolved` / `ambiguous` edges, the `codegraph.toml` in effect (files matched by each `registry` / `entrypoints` / `tests` pattern) and the age/commit of the index. |
+| `stats` | Counts, edge status, the top 10 causes of `unresolved` / `ambiguous` edges, the `teia.toml` in effect (files matched by each `registry` / `entrypoints` / `tests` pattern) and the age/commit of the index. |
 | `export [--format json\|gexf\|mermaid\|dot] [--out FILE] [--kinds K] [--path GLOB] [--group-depth N] [--collapse]` | The file-level import graph (files and resolved imports) for other tools: JSON, GEXF for Gephi, Mermaid or Graphviz DOT. |
 | `view [--out FILE] [--no-open] [--kinds K] [--path GLOB] [--group-depth N]` | Writes one self-contained HTML page with an interactive view of the file-level import graph and opens it in the browser. |
 
@@ -152,18 +154,18 @@ Shared options:
 - `--collapse` makes one node per group (with a `files` count) and aggregates the edges
   between groups; edges inside a group are dropped.
 
-`view` writes `<root>/.codegraph/view.html` (or `--out FILE`) and opens it unless
+`view` writes `<root>/.teia/view.html` (or `--out FILE`) and opens it unless
 `--no-open`. The page is a single file that works from `file://`: the graph data is
 embedded, rendering uses sigma.js, graphology and ForceAtlas2. Nodes are coloured by
 group (click a legend entry to hide or show a group) and sized by in-degree. You can search
 a file by substring, toggle edge kinds, click a node to highlight it and its direct
 neighbours and see its imports and importers, and switch between one node per group and
 all files (the page starts collapsed above 400 files). The libraries are inlined when
-their files are in the package's `codegraph/view/vendor/` (works offline; see the README
+their files are in the package's `teia/view/vendor/` (works offline; see the README
 there for the pinned versions and URLs); otherwise the page loads them from jsDelivr and
 needs a network connection. `view` says on stderr which mode it used.
 
-## Configuration: `codegraph.toml` (optional, repo root)
+## Configuration: `teia.toml` (optional, repo root)
 
 Complete example, with every supported key. All paths are relative to the repo root and
 use `/`. Keys marked "globs" take glob patterns: `*` and `?` stay inside one path segment,
@@ -187,20 +189,20 @@ extensions = [".ts", ".tsx", ".js"]    # plain suffixes (no globs). TS resolutio
 `**/__tests__/**`, `**/__mocks__/**`, `test/**`, `tests/**`, `e2e/**`, `**/test_*.py`,
 `**/*_test.py` and `**/conftest.py`. Setting `tests` replaces them.
 
-`codegraph index` prints a warning on stderr for an unknown top-level key (with a
+`teia index` prints a warning on stderr for an unknown top-level key (with a
 "did you mean" hint) and for a value of the wrong type; the offending entry is ignored.
-`codegraph stats` shows the configuration in effect: how many indexed files each
+`teia stats` shows the configuration in effect: how many indexed files each
 `registry`, `entrypoints` and `tests` pattern matched (`config` in `--json`). A pattern
-from `codegraph.toml` that matches 0 files is flagged `<- matches nothing`, which usually
+from `teia.toml` that matches 0 files is flagged `<- matches nothing`, which usually
 means a typo or a wrong path. The built-in default patterns are not flagged.
 
-Changing this file triggers a full re-index on the next `codegraph index`.
+Changing this file triggers a full re-index on the next `teia index`.
 Changes to `tsconfig*.json`, `jsconfig.json`, `package.json` or
 `pnpm-workspace.yaml` trigger a re-link without re-parsing.
 
 ## Is the index current?
 
-`codegraph index` reports `parsed=0` when nothing changed. `up_to_date` says so
+`teia index` reports `parsed=0` when nothing changed. `up_to_date` says so
 explicitly, and `updated_at` (UTC), `age_seconds` and `commit` give the time the stored
 graph last changed and the git HEAD at that time; `head` and `commit_matches_head`
 compare it with the current HEAD (`null` when the repo has no commit). The index is
@@ -268,28 +270,28 @@ Edge `status`: `resolved`, `external`, `asset`, `unresolved`, `ambiguous`.
 
 ## Using it from an LLM agent
 
-`skills/codegraph/SKILL.md` is a Claude Code skill. It covers setting up `codegraph`
-in a repo (including writing `codegraph.toml` until `stats` is clean) and using it
+`skills/teia/SKILL.md` is a Claude Code skill. It covers setting up `teia`
+in a repo (including writing `teia.toml` until `stats` is clean) and using it
 to answer structural questions. To enable it in a repo, copy the folder to
-`<repo>/.claude/skills/codegraph/`.
+`<repo>/.claude/skills/teia/`.
 
 ## Development
 
 ```sh
 uv sync
 uv run pytest
-uv run codegraph --root path/to/repo index
+uv run teia --root path/to/repo index
 ```
 
 Layout: `scan.py` (files and hashes), `parse.py` (parallel parsing), `languages/`
 (adapters), `resolve.py` (TS module resolution), `link.py` (re-exports and refs),
-`db.py` (SQLite), `cli.py` (commands), `config.py` (`codegraph.toml`), `export.py`
+`db.py` (SQLite), `cli.py` (commands), `config.py` (`teia.toml`), `export.py`
 (file-level graph and its formats), `view/` (HTML viewer: `template.html`, `app.js`,
 `app.css` and optional `vendor/` libraries, read with `importlib.resources`).
 
 ### Adding a language
 
-Add a module under `codegraph/languages/` that implements `LanguageAdapter`
+Add a module under `teia/languages/` that implements `LanguageAdapter`
 (`languages/base.py`):
 - `extensions`;
 - `parse()`, which returns symbols, imports, exports, refs and unresolved items;
