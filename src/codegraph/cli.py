@@ -368,13 +368,25 @@ def find_root(start: str | None) -> Path:
     return Path(out.stdout.strip() if out.returncode == 0 else os.getcwd()).resolve()
 
 
-def main(argv: list[str] | None = None) -> int:
+def common_options(defaults: bool) -> argparse.ArgumentParser:
+    """Global options, accepted before or after the subcommand.
+
+    Subcommands get SUPPRESSed defaults so they don't overwrite a value given before them.
+    """
+    def default(value):
+        return value if defaults else argparse.SUPPRESS
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--root", help="repository root (default: git toplevel of cwd)")
-    common.add_argument("--db", help="database path (default: <root>/.codegraph/graph.db)")
-    common.add_argument("--json", action="store_true", help="JSON output")
-    common.add_argument("--include-tests", action="store_true", help="include test files and mock edges")
-    parser = argparse.ArgumentParser(prog="codegraph", parents=[common])
+    common.add_argument("--root", default=default(None), help="repository root (default: git toplevel of cwd)")
+    common.add_argument("--db", default=default(None), help="database path (default: <root>/.codegraph/graph.db)")
+    common.add_argument("--json", action="store_true", default=default(False), help="JSON output")
+    common.add_argument("--include-tests", action="store_true", default=default(False),
+                        help="include test files and mock edges")
+    return common
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="codegraph", parents=[common_options(True)])
+    common = common_options(False)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("index", parents=[common]).add_argument("--full", action="store_true")
     for name in ("refs", "callers", "callees"):

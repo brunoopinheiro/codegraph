@@ -1,5 +1,9 @@
+import json
+
+from conftest import TS_FILES
 from conftest import query as edges
 
+from codegraph.cli import main
 from codegraph.config import glob_match
 from codegraph.resolve import match_paths
 
@@ -79,6 +83,16 @@ def test_incremental_reindex(cg, repo):
     (repo / "src/b.ts").write_text("export const other = 2;\n", encoding="utf-8")
     assert cg("index")["parsed"] == 1
     assert edges(repo, "SELECT status FROM imports WHERE spec='./amb'") == [{"status": "resolved"}]
+
+
+def test_existing_assets_are_not_unresolved(cg, repo):
+    rows = edges(repo, "SELECT spec, status FROM imports WHERE spec LIKE '%.css' ORDER BY spec")
+    assert rows == [{"spec": "./missing.css", "status": "unresolved"}, {"spec": "./styles.css", "status": "asset"}]
+
+
+def test_root_before_subcommand(repo, capsys):
+    main(["--root", str(repo), "--json", "index"])
+    assert json.loads(capsys.readouterr().out)["files"] == len([p for p in TS_FILES if p.endswith((".ts", ".tsx"))])
 
 
 def test_helpers():

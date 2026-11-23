@@ -35,6 +35,8 @@ CREATE INDEX IF NOT EXISTS ix_symbols_file ON symbols(file_id);
 CREATE INDEX IF NOT EXISTS ix_imports_file ON imports(file_id);
 CREATE INDEX IF NOT EXISTS ix_imports_target ON imports(target_file_id);
 CREATE INDEX IF NOT EXISTS ix_exports_file ON exports(file_id);
+CREATE INDEX IF NOT EXISTS ix_refs_file ON refs(file_id);
+CREATE INDEX IF NOT EXISTS ix_unresolved_file ON unresolved(file_id);
 CREATE INDEX IF NOT EXISTS ix_refs_target ON refs(target_symbol_id);
 CREATE INDEX IF NOT EXISTS ix_refs_scope ON refs(scope_symbol_id);
 """
@@ -64,7 +66,8 @@ def set_meta(con, key: str, value: str) -> None:
 
 
 def reset(con) -> None:
-    con.execute("DELETE FROM files")
+    for table in ("refs", "unresolved", "exports", "imports", "symbols", "files"):  # children first
+        con.execute(f"DELETE FROM {table}")
 
 
 def known_files(con) -> dict[str, tuple[float, int, str]]:

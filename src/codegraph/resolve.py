@@ -57,6 +57,7 @@ def match_paths(spec: str, paths: dict[str, list[str]], base: str) -> list[str] 
 class NodeResolver:
     def __init__(self, root: Path, all_files: list[str], files: set[str], cfg: Config):
         self.root, self.files, self.cfg = root, files, cfg
+        self.all_files = set(all_files)
         self.exts = cfg.extensions or DEFAULT_EXTS
         self.config_dirs = {posixpath.dirname(p): p for p in sorted(all_files, reverse=True)
                             if posixpath.basename(p) in CONFIG_NAMES}  # tsconfig wins over jsconfig
@@ -164,17 +165,24 @@ class NodeResolver:
                 return base + "/index" + e
         return None
 
+    def locate(self, base: str) -> tuple[str, str] | None:
+        """A source file (internal), an existing non-code file such as CSS or SVG (asset), or None."""
+        hit = self.probe(base)
+        if hit:
+            return "internal", hit
+        return ("asset", base) if base in self.all_files else None
+
     def resolve(self, spec: str, from_file: str) -> tuple[str, str]:
         here = posixpath.dirname(from_file)
         key = (here, spec)
         if key not in self._cache:
-            self._cache[key] = self._resolve(spec, here)
+            self._cache[key] = self._resolve(spec.split("?", 1)[0], here)  # drop bundler queries (?raw)
         return self._cache[key]
 
     def _resolve(self, spec: str, here: str) -> tuple[str, str]:
         if spec.startswith((".", "/")):
-            hit = self.probe(_join(here, spec) if spec.startswith(".") else spec.lstrip("/"))
-            return ("internal", hit) if hit else ("unresolved", "file-not-found")
+            found = self.locate(_join(here, spec) if spec.startswith(".") else spec.lstrip("/"))
+            return found or ("unresolved", "file-not-found")
         tc = self.config_for(here)
         alias_matched = False
         for paths, base in ((self.cfg.aliases, ""), (tc["paths"], tc["base_url"] or tc["paths_base"] or "")):
@@ -182,13 +190,13 @@ class NodeResolver:
             if cands is not None:
                 alias_matched = True
                 for cand in cands:
-                    hit = self.probe(cand)
-                    if hit:
-                        return "internal", hit
+                    found = self.locate(cand)
+                    if found:
+                        return found
         if tc["base_url"] is not None:
-            hit = self.probe(_join(tc["base_url"], spec))
-            if hit:
-                return "internal", hit
+            found = self.locate(_join(tc["base_url"], spec))
+            if found:
+                return found
         if alias_matched:
             return "unresolved", "alias-target-not-found"
         parts = spec.split("/")

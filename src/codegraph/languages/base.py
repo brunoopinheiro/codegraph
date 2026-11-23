@@ -59,7 +59,8 @@ class FileFacts:
 
 class Resolver(Protocol):
     def resolve(self, spec: str, from_file: str) -> tuple[str, str]:
-        """Return (status, value): ("internal", path) | ("external", package) | ("unresolved", reason)."""
+        """Return (status, value): ("internal", path) | ("asset", path) | ("external", package)
+        | ("unresolved", reason). `asset` is an existing file that is not indexed (CSS, SVG, JSON...)."""
 
 
 class LanguageAdapter(Protocol):

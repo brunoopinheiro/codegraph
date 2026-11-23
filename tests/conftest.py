@@ -28,7 +28,9 @@ TS_FILES = {
     "src/registry.ts": "export const registry = { page: () => import('./pages/page') };\n",
     "src/cycle/x.ts": "import { y } from './y';\nexport const x = () => y();\n",
     "src/cycle/y.ts": "import { x } from './x';\nexport const y = () => x;\n",
-    "src/app.test.ts": "import { vi } from 'vitest';\nimport { isoDate } from './lib/date';\n"
+    "src/styles.css": "body {}\n",
+    "src/styled.ts": "import './styles.css';\nimport './missing.css';\n",
+    "src/app.test.ts":"import { vi } from 'vitest';\nimport { isoDate } from './lib/date';\n"
                        "vi.mock('./lib/date', () => ({}));\nisoDate(new Date());\n",
 }
 
