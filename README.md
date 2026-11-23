@@ -54,15 +54,15 @@ subcommand.
 
 | Command | What it answers |
 |---|---|
-| `index [--full]` | Build or update the graph. `--full` discards the database first. |
+| `index [--full]` | Build or update the graph. `--full` discards the database first. Reports whether anything changed (`up_to_date`), when the index last changed and the commit it was built at. |
 | `refs <symbol>` | Definitions and every reference (`call`, `jsx`, `use`, `type`) with the enclosing top-level symbol. |
 | `callers <symbol>` | Who calls or renders the symbol, grouped by caller. |
 | `callees <symbol>` | What the symbol calls or renders. |
-| `impact <file\|symbol>` | Reverse transitive closure: files that may break if the target changes, with depth. |
+| `impact <file\|symbol> [--depth N] [--through-registry]` | Reverse transitive closure: files that may break if the target changes, with depth and the edge kind each was reached by. |
 | `path <a> <b>` | Shortest import path from `a` to `b` (files or symbols), with edge kinds and lines. |
-| `cycles [--kinds k1,k2]` | Import cycles (strongly connected components) and a shortest example loop. |
-| `unused-exports` | Exported symbols that nothing uses. |
-| `stats` | Counts, edge status and the top 10 causes of `unresolved` / `ambiguous` edges. |
+| `cycles [--kinds k1,k2] [--members] [--edges]` | Import cycles (strongly connected components), a shortest example loop and the edge kinds holding each one together. |
+| `unused-exports [--path GLOB] [--kind K] [--class C] [--limit N] [--summary]` | Exported symbols that nothing outside their file (or outside tests) uses, classified `dead`, `local-only` or `test-only`. |
+| `stats` | Counts, edge status, the top 10 causes of `unresolved` / `ambiguous` edges, the `codegraph.toml` in effect (files matched by each `registry` / `entrypoints` / `tests` pattern) and the age/commit of the index. |
 
 A symbol is a bare name (`isoDate`) or `path:name` (`src/lib/format.ts:isoDate`)
 when the name is defined in more than one file. Paths are relative to the repo root.
@@ -74,24 +74,98 @@ By default test files and `mock` edges are left out of `refs`, `callers`, `impac
 Type-only imports and lazy dynamic imports don't create runtime cycles; add them
 with `--kinds static,reexport,star,registry,type,dynamic`.
 
+### `impact`
+
+- `--depth N` follows importers at most N levels.
+- **Registry boundary.** A file listed under `registry` imports many modules lazily, so
+  walking past it reaches everything the app wires together. By default `impact`
+  reports a registry file that imports something impacted (`via: "registry"`) but does
+  not continue to what imports the registry. The text output says how many registry
+  files it stopped at, and `--json` lists them in `registry_stopped`. Pass
+  `--through-registry` for the full traversal.
+- `--json` files look like `{"path", "depth", "via", "from"}`: `via` is the edge kind it
+  was reached by (`static`, `type`, `dynamic`, `registry`, `reexport`, `star`, `mock`, or
+  `ref` when a file references a target symbol directly) and `from` the file it was
+  reached from. `depth_counts` has the number of files per depth; the text output ends
+  with the same counts, e.g. `12 file(s) impacted (depth 1: 3, depth 2: 9)`.
+
+### `cycles`
+
+Each cycle in `--json` has `files` (every member), `example` (one loop), `edge_kinds`
+(edges inside the component, per kind), `held_by` (kinds whose removal breaks the cycle
+entirely, so those kinds are needed to hold it together) and `needs_registry`. A cycle
+that exists only because of `registry` edges is not a static import cycle. `--members`
+prints every member in text output; `--edges` adds the `from` / `to` / `kind` / `line` of
+each edge inside the component (text and JSON).
+
+### `unused-exports`
+
+An export is not reported when a non-test file uses it from another file, when a
+module that imports it as a whole (side-effect, dynamic or registry import) can reach it,
+or when it is in an `entrypoints` file. Everything else is classified:
+
+| Class | Meaning |
+|---|---|
+| `dead` | No reference at all. |
+| `local-only` | Used only inside its own file; the `export` keyword is unnecessary. (Python has no `export`, so a use in the same file counts as a use and is not reported.) |
+| `test-only` | Used from test files only (also through a barrel). Not dead code. |
+
+A symbol used both locally and from tests is `test-only`. Tests are always read, which is
+what separates `test-only` from `dead`. By default `test-only` entries are listed. With
+`--include-tests` a test using an export counts as a use, so `test-only` entries disappear.
+
+Filters: `--path GLOB` (repeatable, matched against the repo-relative path, e.g.
+`'src/modules/guest/**'`), `--kind function,component` (comma separated: `function`,
+`component`, `type`, `interface`, `const`, `class`, `enum`, `variable`, ...) and
+`--class dead,local-only` (comma separated). `--limit N` lists the first N entries by path.
+`--summary` prints counts per class, kind and directory (the first `--group-depth`
+levels, default 3) without listing entries. `--json` always has `total` (after filters,
+before `--limit`), `shown` and `unused` entries `{"path", "name", "kind", "line", "class"}`;
+with `--summary` it adds `summary` and `unused` is empty.
+
 ## Configuration: `codegraph.toml` (optional, repo root)
 
-```toml
-include = ["src/**"]                   # globs; default: every file git lists
-exclude = ["**/*.generated.ts"]
-registry = ["src/modules/registry.ts"] # imports in these files get kind=registry
-entrypoints = ["src/main.tsx"]         # exports here are never "unused"
-tests = ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/test_*.py"]
-source_roots = ["src"]                 # Python import roots (default: ".", "src", "lib")
-extensions = [".ts", ".tsx", ".js"]    # TS resolution order (default covers ts/tsx/d.ts/js/jsx/mjs/cjs)
+Complete example, with every supported key. All paths are relative to the repo root and
+use `/`. Keys marked "globs" take glob patterns: `*` and `?` stay inside one path segment,
+`**/` matches zero or more directories, `**` matches anything.
 
-[aliases]                              # extra aliases, same syntax as tsconfig "paths"
+```toml
+include = ["src/**"]                   # globs. Only index files matching one. Default: every file git lists
+exclude = ["**/*.generated.ts"]        # globs. Skip files matching one
+registry = ["src/modules/registry.ts"] # globs. Imports in these files get kind=registry (lazy wiring files)
+entrypoints = ["src/main.tsx"]         # globs. Exports in these files are never reported by unused-exports
+tests = ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/test_*.py"]  # globs. Replaces the defaults
+source_roots = ["src"]                 # plain directories (no globs). Python import roots, default ".", "src", "lib"
+extensions = [".ts", ".tsx", ".js"]    # plain suffixes (no globs). TS resolution order, default covers ts/tsx/d.ts/js/jsx/mjs/cjs
+
+[aliases]                              # keys are tsconfig-style patterns ("@/*"), values a string or list of targets
 "~/*" = ["src/*"]
 ```
+
+`include`, `exclude`, `registry`, `entrypoints` and `tests` are globs; `source_roots`,
+`extensions` and `[aliases]` are not. The default `tests` are `**/*.test.*`, `**/*.spec.*`,
+`**/__tests__/**`, `**/__mocks__/**`, `test/**`, `tests/**`, `e2e/**`, `**/test_*.py`,
+`**/*_test.py` and `**/conftest.py`. Setting `tests` replaces them.
+
+`codegraph index` prints a warning on stderr for an unknown top-level key (with a
+"did you mean" hint) and for a value of the wrong type; the offending entry is ignored.
+`codegraph stats` shows the configuration in effect: how many indexed files each
+`registry`, `entrypoints` and `tests` pattern matched (`config` in `--json`). A pattern
+from `codegraph.toml` that matches 0 files is flagged `<- matches nothing`, which usually
+means a typo or a wrong path. The built-in default patterns are not flagged.
 
 Changing this file triggers a full re-index on the next `codegraph index`.
 Changes to `tsconfig*.json`, `jsconfig.json`, `package.json` or
 `pnpm-workspace.yaml` trigger a re-link without re-parsing.
+
+## Is the index current?
+
+`codegraph index` reports `parsed=0` when nothing changed. `up_to_date` says so
+explicitly, and `updated_at` (UTC), `age_seconds` and `commit` give the time the stored
+graph last changed and the git HEAD at that time; `head` and `commit_matches_head`
+compare it with the current HEAD (`null` when the repo has no commit). The index is
+built from the working tree, so uncommitted edits are included once you run `index`;
+`commit` is the base commit, not a snapshot of it. `stats` shows the same `index` block.
 
 ## How resolution works
 

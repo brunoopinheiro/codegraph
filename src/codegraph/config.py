@@ -1,6 +1,7 @@
 """Optional codegraph.toml at the target repo root."""
 from __future__ import annotations
 
+import difflib
 import functools
 import hashlib
 import re
@@ -23,6 +24,13 @@ class Config:
     extensions: list[str] = field(default_factory=list)
     source_roots: list[str] = field(default_factory=list)  # Python import roots (default: ".", "src", "lib")
     digest: str = ""
+    present: bool = False  # a codegraph.toml exists
+    explicit: set[str] = field(default_factory=set)  # keys set in the toml
+    warnings: list[str] = field(default_factory=list)  # unknown keys, wrong types
+
+
+LIST_KEYS = ("include", "exclude", "registry", "entrypoints", "tests", "extensions", "source_roots")
+KNOWN_KEYS = (*LIST_KEYS, "aliases")
 
 
 def load_config(root: Path) -> Config:
@@ -31,11 +39,39 @@ def load_config(root: Path) -> Config:
         return Config()
     raw = path.read_bytes()
     data = tomllib.loads(raw.decode("utf-8"))
-    aliases = {k: [v] if isinstance(v, str) else list(v) for k, v in data.get("aliases", {}).items()}
-    cfg = Config(aliases=aliases, digest=hashlib.sha1(raw).hexdigest())
-    for key in ("include", "exclude", "registry", "entrypoints", "tests", "extensions", "source_roots"):
-        if key in data:
-            setattr(cfg, key, list(data[key]))
+    cfg = Config(digest=hashlib.sha1(raw).hexdigest(), present=True)
+    for key in data:
+        if key not in KNOWN_KEYS:
+            close = difflib.get_close_matches(key, KNOWN_KEYS, n=1)
+            hint = f" (did you mean {close[0]!r}?)" if close else ""
+            cfg.warnings.append(f"codegraph.toml: unknown key {key!r}{hint}; it is ignored. "
+                                f"Supported keys: {', '.join(KNOWN_KEYS)}")
+    aliases = data.get("aliases", {})
+    if isinstance(aliases, dict):
+        for k, v in aliases.items():
+            if isinstance(v, str):
+                cfg.aliases[k] = [v]
+            elif isinstance(v, list) and all(isinstance(x, str) for x in v):
+                cfg.aliases[k] = list(v)
+            else:
+                cfg.warnings.append(f"codegraph.toml: [aliases] {k!r} must be a string or a list of strings; ignored")
+        if "aliases" in data:
+            cfg.explicit.add("aliases")
+    else:
+        cfg.warnings.append("codegraph.toml: 'aliases' must be a table ([aliases]); ignored")
+    for key in LIST_KEYS:
+        if key not in data:
+            continue
+        value = data[key]
+        if isinstance(value, str):
+            cfg.warnings.append(f"codegraph.toml: {key!r} should be a list of strings; treating the string as "
+                                f"one entry")
+            value = [value]
+        if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+            cfg.warnings.append(f"codegraph.toml: {key!r} must be a list of strings; ignored")
+            continue
+        setattr(cfg, key, list(value))
+        cfg.explicit.add(key)
     return cfg
 
 
